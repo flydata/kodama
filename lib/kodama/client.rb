@@ -99,10 +99,10 @@ module Kodama
     end
 
     def start
+      @retry_info.count_reset
       begin
         client = binlog_client(@url)
         raise Binlog::Error, 'MySQL server has gone away' unless client.connect
-        @retry_info.count_reset
 
         if @binlog_info.valid?
           client.set_position(@binlog_info.filename, @binlog_info.position)
