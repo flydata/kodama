@@ -140,15 +140,15 @@ describe Kodama::Client do
 
     context "when an error is raised" do
       let(:events) { [query_event] }
+      let(:retry_limit) { 2 }
       before do
-        client.connection_retry_limit = 2
+        client.connection_retry_limit = retry_limit
         client.connection_retry_wait = 0.1
-
-        binlog_client.should_receive(:wait_for_next_event).and_raise Binlog::Error
       end
       it 'should retry exactly specifeid times' do
+        binlog_client.should_receive(:wait_for_next_event).exactly(retry_limit + 1).times.and_raise(Binlog::Error)
         expect { client.start }.to raise_error(Binlog::Error)
-        client.connection_retry_count.should == 2
+        client.connection_retry_count.should == retry_limit
       end
     end
 
