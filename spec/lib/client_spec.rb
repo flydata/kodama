@@ -54,15 +54,18 @@ describe Kodama::Client do
       end
     end
 
-    def stub_binlog_client(events = [], connect = true)
-      client.stub(:binlog_client).and_return { TestBinlogClient.new(events, connect) }
-    end
+    let(:connect) { true }
+    let(:binlog_client) { TestBinlogClient.new(events, connect) }
 
     def stub_position_file(position_file = nil)
       client.stub(:position_file).and_return { position_file || TestPositionFile.new }
     end
 
-    let(:client) { Kodama::Client.new('mysql://user@host') }
+    let(:client) {
+      c = Kodama::Client.new('mysql://user@host')
+      c.stub(:binlog_client).and_return { binlog_client }
+      c
+    }
 
     let(:rotate_event) do
       mock(Binlog::RotateEvent).tap do |event|
@@ -90,49 +93,74 @@ describe Kodama::Client do
       end
     end
 
-    it 'should receive query_event' do
-      stub_binlog_client([query_event])
-      expect {|block|
-        client.on_query_event(&block)
-        client.start
-      }.to yield_with_args(query_event)
-    end
-
-    it 'should receive row_event' do
-      stub_binlog_client([row_event])
-      expect {|block|
-        client.on_row_event(&block)
-        client.start
-      }.to yield_with_args(row_event)
-    end
-
-    it 'should save position only on row, query and rotate event' do
-      stub_binlog_client([rotate_event, query_event, row_event, xid_event])
-      position_file = TestPositionFile.new.tap do |pf|
-        pf.should_receive(:update).with('binlog', 100).once.ordered
-        pf.should_receive(:update).with('binlog', 200).once.ordered
-        pf.should_receive(:update).with('binlog', 300).once.ordered
+    context "with query event" do
+      let(:events) { [query_event] }
+      it 'should receive query_event' do
+        expect {|block|
+          client.on_query_event(&block)
+          client.start
+        }.to yield_with_args(query_event)
       end
-      stub_position_file(position_file)
-      client.binlog_position_file = 'test'
-      client.start
     end
 
-    it 'should retry exactly specifeid times' do
-      stub_binlog_client([query_event], false)
-      client.connection_retry_limit = 2
-      client.connection_retry_wait = 0.1
-      expect { client.start }.to raise_error(Binlog::Error)
-      client.connection_retry_count.should == 2
-    end
-
-    it 'should stop when it receives stop request' do
-      stub_binlog_client([query_event, row_event])
-      client.on_query_event do |event|
-        self.stop_request
+    context "with row event" do
+      let(:events) { [row_event] }
+      it 'should receive row_event' do
+        expect {|block|
+          client.on_row_event(&block)
+          client.start
+        }.to yield_with_args(row_event)
       end
-      expect {|block| client.on_row_event(&block) }.not_to yield_control
-      client.start
+    end
+
+    context "with multiple events" do
+      let(:events) { [rotate_event, query_event, row_event, xid_event] }
+      it 'should save position only on row, query and rotate event' do
+        position_file = TestPositionFile.new.tap do |pf|
+          pf.should_receive(:update).with('binlog', 100).once.ordered
+          pf.should_receive(:update).with('binlog', 200).once.ordered
+          pf.should_receive(:update).with('binlog', 300).once.ordered
+        end
+        stub_position_file(position_file)
+        client.binlog_position_file = 'test'
+        client.start
+      end
+    end
+
+    context "when connection failed" do
+      let(:events) { [query_event] }
+      let(:connect) { false }
+      it 'should retry exactly specifeid times' do
+        client.connection_retry_limit = 2
+        client.connection_retry_wait = 0.1
+        expect { client.start }.to raise_error(Binlog::Error)
+        client.connection_retry_count.should == 2
+      end
+    end
+
+    context "when an error is raised" do
+      let(:events) { [query_event] }
+      let(:retry_limit) { 2 }
+      before do
+        client.connection_retry_limit = retry_limit
+        client.connection_retry_wait = 0.1
+      end
+      it 'should retry exactly specifeid times' do
+        binlog_client.should_receive(:wait_for_next_event).exactly(retry_limit + 1).times.and_raise(Binlog::Error)
+        expect { client.start }.to raise_error(Binlog::Error)
+        client.connection_retry_count.should == retry_limit
+      end
+    end
+
+    context "with stop request" do
+      let(:events) { [query_event, row_event] }
+      it 'should stop when it receives stop request' do
+        client.on_query_event do |event|
+          self.stop_request
+        end
+        expect {|block| client.on_row_event(&block) }.not_to yield_control
+        client.start
+      end
     end
   end
 end
