@@ -144,19 +144,8 @@ module Kodama
 
     def process_event(event)
       # If the position in binlog file is behind the sent position,
-      # keep updating only binlog info
-      unless @binlog_info.should_process?(@sent_binlog_info)
-        case event
-        when Binlog::QueryEvent
-          @binlog_info.save_with(@binlog_info.filename, event.next_position)
-        when Binlog::RotateEvent
-          # Call callback because app might need binlog info when resuming
-          callback :on_rotate_event, event
-          @binlog_info.save_with(event.binlog_file, event.binlog_pos)
-        end
-        set_next_event_position(@binlog_info, event)
-        return
-      end
+      # keep updating only binlog info in most of cases
+      processable = @binlog_info.should_process?(@sent_binlog_info)
 
       # Keep current binlog position temporary
       cur_binlog_file = @binlog_info.filename
@@ -164,35 +153,65 @@ module Kodama
 
       case event
       when Binlog::QueryEvent
-        callback :on_query_event, event
-        # Save current event's position as sent (@sent_binlog_info)
-        @sent_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        if processable
+          callback :on_query_event, event
+          # Save current event's position as sent (@sent_binlog_info)
+          @sent_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        end
         # Save next event's position as checkpoint (@binlog_info)
         @binlog_info.save_with(cur_binlog_file, event.next_position)
+
       when Binlog::RotateEvent
+        # Even if the event is already sent, call callback
+        # because app might need binlog info when resuming.
         callback :on_rotate_event, event
         # Update binlog_info with rotation
         @binlog_info.save_with(event.binlog_file, event.binlog_pos)
+
       when Binlog::IntVarEvent
-        callback :on_int_var_event, event
+        if processable
+          callback :on_int_var_event, event
+        end
+
       when Binlog::UserVarEvent
-        callback :on_user_var_event, event
+        if processable
+          callback :on_user_var_event, event
+        end
+
       when Binlog::FormatEvent
-        callback :on_format_event, event
+        if processable
+          callback :on_format_event, event
+        end
+
       when Binlog::Xid
-        callback :on_xid, event
+        if processable
+          callback :on_xid, event
+        end
+
       when Binlog::TableMapEvent
-        callback :on_table_map_event, event
+        if processable
+          callback :on_table_map_event, event
+        end
         # Save current event's position as checkpoint
         @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+
       when Binlog::RowEvent
-        callback :on_row_event, event
-        # Save current event's position as sent
-        @sent_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        if processable
+          callback :on_row_event, event
+          # Save current event's position as sent
+          @sent_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        end
+
       when Binlog::IncidentEvent
-        callback :on_incident_event, event
+        if processable
+          callback :on_incident_event, event
+        end
+
       when Binlog::UnimplementedEvent
-        callback :on_unimplemented_event, event
+        if processable
+          callback :on_unimplemented_event, event
+        end
+
       else
         @logger.error "Not Implemented: #{event.event_type}"
       end
