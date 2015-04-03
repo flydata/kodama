@@ -33,7 +33,12 @@ describe Kodama::Client do
 
       def stub_event(target_event)
         target_event_class = target_event.instance_variable_get('@name')
-        [Binlog::QueryEvent, Binlog::RowEvent, Binlog::RotateEvent, Binlog::Xid].each do |event|
+        [Binlog::QueryEvent,
+         Binlog::RowEvent,
+         Binlog::RotateEvent,
+         Binlog::Xid,
+         Binlog::TableMapEvent,
+        ].each do |event|
           if event == target_event_class
             event.stub(:===).and_return { true }
           else
@@ -57,8 +62,13 @@ describe Kodama::Client do
     let(:connect) { true }
     let(:binlog_client) { TestBinlogClient.new(events, connect) }
 
-    def stub_position_file(position_file = nil)
+    def stub_position_file(position_file = nil, file_name = nil)
       client.stub(:position_file).and_return { position_file || TestPositionFile.new }
+    end
+
+    # @param {"file_name" => <PositionFile>, ....}
+    def stub_position_files(fn_posf_hash)
+      client.stub(:position_file).and_return { |fn| fn_posf_hash[fn] || TestPositionFile.new }
     end
 
     let(:client) {
@@ -78,6 +88,12 @@ describe Kodama::Client do
     let(:query_event) do
       mock(Binlog::QueryEvent).tap do |event|
         event.stub(:next_position).and_return { 200 }
+      end
+    end
+
+    let(:table_map_event) do
+      mock(Binlog::TableMapEvent).tap do |event|
+        event.stub(:next_position).and_return { 250 }
       end
     end
 
@@ -114,16 +130,84 @@ describe Kodama::Client do
     end
 
     context "with multiple events" do
-      let(:events) { [rotate_event, query_event, row_event, xid_event] }
-      it 'should save position only on row, query and rotate event' do
-        position_file = TestPositionFile.new.tap do |pf|
-          pf.should_receive(:update).with('binlog', 100).once.ordered
-          pf.should_receive(:update).with('binlog', 200).once.ordered
-          pf.should_receive(:update).with('binlog', 300).once.ordered
+      #               100           100          200              250        300
+      let(:events) { [rotate_event, query_event, table_map_event, row_event, xid_event] }
+
+      context 'when sent position file is not set' do
+        it 'should save position on events' do
+          position_file = TestPositionFile.new.tap do |pf|
+            # On rotate event
+            pf.should_receive(:update).with('binlog', 100).once.ordered
+            # 1st: After query event
+            # 2nd: On table map event
+            pf.should_receive(:update).with('binlog', 200).twice.ordered
+            pf.should_receive(:update).with('binlog', 300).never
+          end
+          stub_position_file(position_file)
+          client.binlog_position_file = 'test'
+          client.start
         end
-        stub_position_file(position_file)
-        client.binlog_position_file = 'test'
-        client.start
+      end
+
+      context 'when sent position file is set' do
+        context 'when sent position is empty' do
+          it 'should save position and sent position on events' do
+            position_file = TestPositionFile.new.tap do |pf|
+              pf.should_receive(:update).with('binlog', 100).once.ordered
+              pf.should_receive(:update).with('binlog', 200).twice.ordered
+              pf.should_receive(:update).with('binlog', 250).never
+              pf.should_receive(:update).with('binlog', 300).never
+              pf.should_receive(:update).with('binlog', 400).never
+            end
+
+            sent_position_file = TestPositionFile.new.tap do |pf|
+              # At query event
+              pf.should_receive(:update).with('binlog', 100).once
+              pf.should_receive(:update).with('binlog', 200).never
+              # At row event
+              pf.should_receive(:update).with('binlog', 250).once
+              pf.should_receive(:update).with('binlog', 300).never
+              pf.should_receive(:update).with('binlog', 400).never
+            end
+
+            stub_position_files('test_resume' => position_file,
+                                'test_sent' => sent_position_file)
+
+            client.binlog_position_file = 'test_resume'
+            client.sent_binlog_position_file = 'test_sent'
+            client.start
+          end
+        end
+
+        context 'when sent position is not empty' do
+          it 'should save position and sent position on events' do
+            position_file = TestPositionFile.new.tap do |pf|
+              pf.should_receive(:update).with('binlog', 100).once.ordered
+              pf.should_receive(:update).with('binlog', 200).twice.ordered
+              pf.should_receive(:update).with('binlog', 250).never
+              pf.should_receive(:update).with('binlog', 300).never
+              pf.should_receive(:update).with('binlog', 400).never
+            end
+
+            sent_position_file = TestPositionFile.new.tap do |pf|
+              pf.should_receive(:read).and_return(['binlog', 100])
+              # At query event -> shold be skipped
+              pf.should_receive(:update).with('binlog', 100).never
+              pf.should_receive(:update).with('binlog', 200).never
+              # At row event
+              pf.should_receive(:update).with('binlog', 250).once
+              pf.should_receive(:update).with('binlog', 300).never
+              pf.should_receive(:update).with('binlog', 400).never
+            end
+
+            stub_position_files('test_resume' => position_file,
+                                'test_sent' => sent_position_file)
+
+            client.binlog_position_file = 'test_resume'
+            client.sent_binlog_position_file = 'test_sent'
+            client.start
+          end
+        end
       end
     end
 
