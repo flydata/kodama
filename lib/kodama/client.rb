@@ -30,7 +30,7 @@ module Kodama
     def initialize(url)
       @url = url
       @binlog_info = BinlogInfo.new
-      @processed_binlog_info = BinlogInfo.new
+      @sent_binlog_info = BinlogInfo.new
       @retry_info = RetryInfo.new(:limit => 100, :wait => 3)
       @callbacks = {}
       @logger = Logger.new(STDOUT)
@@ -55,9 +55,9 @@ module Kodama
       @binlog_info.load!(@position_file)
     end
 
-    def processed_binlog_position_file=(filename)
-      @processed_position_file = position_file(filename)
-      @processed_binlog_info.load!(@processed_position_file)
+    def sent_binlog_position_file=(filename)
+      @sent_position_file = position_file(filename)
+      @sent_binlog_info.load!(@sent_position_file)
     end
 
     def connection_retry_wait=(wait)
@@ -143,9 +143,9 @@ module Kodama
     end
 
     def process_event(event)
-      # If the position in binlog file is behind the processed position,
+      # If the position in binlog file is behind the sent position,
       # keep updating only binlog info
-      unless @binlog_info.should_process?(@processed_binlog_info)
+      unless @binlog_info.should_process?(@sent_binlog_info)
         case event
         when Binlog::QueryEvent
           @binlog_info.save_with(@binlog_info.filename, event.next_position)
@@ -163,8 +163,8 @@ module Kodama
       case event
       when Binlog::QueryEvent
         callback :on_query_event, event
-        # Save current event's position as processed (@processed_binlog_info)
-        @processed_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        # Save current event's position as sent (@sent_binlog_info)
+        @sent_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
         # Save next event's position as checkpoint (@binlog_info)
         @binlog_info.save_with(cur_binlog_file, event.next_position)
       when Binlog::RotateEvent
@@ -185,8 +185,8 @@ module Kodama
         @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
       when Binlog::RowEvent
         callback :on_row_event, event
-        # Save current event's position as processed
-        @processed_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        # Save current event's position as sent
+        @sent_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
       when Binlog::IncidentEvent
         callback :on_incident_event, event
       when Binlog::UnimplementedEvent
@@ -245,24 +245,24 @@ module Kodama
         @filename, @position = @position_file.read
       end
 
-      def should_process?(processed_binlog_info)
-        if self.valid? && processed_binlog_info && processed_binlog_info.valid?
+      def should_process?(sent_binlog_info)
+        if self.valid? && sent_binlog_info && sent_binlog_info.valid?
           # Compare binlog filename and position
           #
-          # Event should be processed only when the event position is bigger than
-          # the processed position
+          # Event should be sent only when the event position is bigger than
+          # the sent position
           #
           #   ex)
-          #   binlog_info               processed_binlog_info     result
+          #   binlog_info               sent_binlog_info     result
           #   -----------------------------------------------------------
           #   mysql-bin.000004 00001    mysql-bin.000003 00001    true
           #   mysql-bin.000004 00030    mysql-bin.000004 00001    true
           #   mysql-bin.000004 00030    mysql-bin.000004 00030    false
           #   mysql-bin.000004 00030    mysql-bin.000004 00050    false
           #   mysql-bin.000004 00030    mysql-bin.000005 00001    false
-          @filename > processed_binlog_info.filename ||
-            (@filename == processed_binlog_info.filename &&
-             @position.to_i > processed_binlog_info.position.to_i)
+          @filename > sent_binlog_info.filename ||
+            (@filename == sent_binlog_info.filename &&
+             @position.to_i > sent_binlog_info.position.to_i)
         else
           true
         end

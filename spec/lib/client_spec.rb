@@ -133,7 +133,7 @@ describe Kodama::Client do
       #               100           100          200              250        300
       let(:events) { [rotate_event, query_event, table_map_event, row_event, xid_event] }
 
-      context 'when processed position file is not set' do
+      context 'when sent position file is not set' do
         it 'should save position on events' do
           position_file = TestPositionFile.new.tap do |pf|
             # On rotate event
@@ -149,9 +149,9 @@ describe Kodama::Client do
         end
       end
 
-      context 'when processed position file is set' do
-        context 'when processed position is empty' do
-          it 'should save position and processed position on events' do
+      context 'when sent position file is set' do
+        context 'when sent position is empty' do
+          it 'should save position and sent position on events' do
             position_file = TestPositionFile.new.tap do |pf|
               pf.should_receive(:update).with('binlog', 100).once.ordered
               pf.should_receive(:update).with('binlog', 200).twice.ordered
@@ -160,7 +160,7 @@ describe Kodama::Client do
               pf.should_receive(:update).with('binlog', 400).never
             end
 
-            processed_position_file = TestPositionFile.new.tap do |pf|
+            sent_position_file = TestPositionFile.new.tap do |pf|
               # At query event
               pf.should_receive(:update).with('binlog', 100).once
               pf.should_receive(:update).with('binlog', 200).never
@@ -171,16 +171,16 @@ describe Kodama::Client do
             end
 
             stub_position_files('test_resume' => position_file,
-                                'test_processed' => processed_position_file)
+                                'test_sent' => sent_position_file)
 
             client.binlog_position_file = 'test_resume'
-            client.processed_binlog_position_file = 'test_processed'
+            client.sent_binlog_position_file = 'test_sent'
             client.start
           end
         end
 
-        context 'when processed position is not empty' do
-          it 'should save position and processed position on events' do
+        context 'when sent position is not empty' do
+          it 'should save position and sent position on events' do
             position_file = TestPositionFile.new.tap do |pf|
               pf.should_receive(:update).with('binlog', 100).once.ordered
               pf.should_receive(:update).with('binlog', 200).twice.ordered
@@ -189,7 +189,7 @@ describe Kodama::Client do
               pf.should_receive(:update).with('binlog', 400).never
             end
 
-            processed_position_file = TestPositionFile.new.tap do |pf|
+            sent_position_file = TestPositionFile.new.tap do |pf|
               pf.should_receive(:read).and_return(['binlog', 100])
               # At query event -> shold be skipped
               pf.should_receive(:update).with('binlog', 100).never
@@ -201,10 +201,10 @@ describe Kodama::Client do
             end
 
             stub_position_files('test_resume' => position_file,
-                                'test_processed' => processed_position_file)
+                                'test_sent' => sent_position_file)
 
             client.binlog_position_file = 'test_resume'
-            client.processed_binlog_position_file = 'test_processed'
+            client.sent_binlog_position_file = 'test_sent'
             client.start
           end
         end
