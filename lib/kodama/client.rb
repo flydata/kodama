@@ -148,9 +148,9 @@ module Kodama
       unless @binlog_info.should_process?(@processed_binlog_info)
         case event
         when Binlog::QueryEvent
-          save_binlog_info(@binlog_info.filename, event.next_position)
+          @binlog_info.save_with(@binlog_info.filename, event.next_position)
         when Binlog::RotateEvent
-          save_binlog_info(event.binlog_file, event.binlog_pos)
+          @binlog_info.save_with(event.binlog_file, event.binlog_pos)
         end
         set_next_event_position(@binlog_info, event)
         return
@@ -164,13 +164,13 @@ module Kodama
       when Binlog::QueryEvent
         callback :on_query_event, event
         # Save current event's position as processed (@processed_binlog_info)
-        save_processed_binlog_info(cur_binlog_file, cur_binlog_pos)
+        @processed_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
         # Save next event's position as checkpoint (@binlog_info)
-        save_binlog_info(cur_binlog_file, event.next_position)
+        @binlog_info.save_with(cur_binlog_file, event.next_position)
       when Binlog::RotateEvent
         callback :on_rotate_event, event
         # Update binlog_info with rotation
-        save_binlog_info(event.binlog_file, event.binlog_pos)
+        @binlog_info.save_with(event.binlog_file, event.binlog_pos)
       when Binlog::IntVarEvent
         callback :on_int_var_event, event
       when Binlog::UserVarEvent
@@ -182,11 +182,11 @@ module Kodama
       when Binlog::TableMapEvent
         callback :on_table_map_event, event
         # Save current event's position as checkpoint
-        save_binlog_info(cur_binlog_file, cur_binlog_pos)
+        @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
       when Binlog::RowEvent
         callback :on_row_event, event
         # Save current event's position as processed
-        save_processed_binlog_info(cur_binlog_file, cur_binlog_pos)
+        @processed_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
       when Binlog::IncidentEvent
         callback :on_incident_event, event
       when Binlog::UnimplementedEvent
@@ -216,40 +216,33 @@ module Kodama
       end
     end
 
-    def save_binlog_info(bin_file = nil, bin_pos = nil)
-      save_binlog_info_to_file(@binlog_info, @position_file, bin_file, bin_pos)
-    end
-
-    def save_processed_binlog_info(bin_file, bin_pos)
-      save_binlog_info_to_file(@processed_binlog_info, @processed_position_file, bin_file, bin_pos)
-    end
-
-    def save_binlog_info_to_file(binlog_info, save_file, bin_file, bin_pos)
-      binlog_info.filename = bin_file if bin_file
-      binlog_info.position = bin_pos if bin_pos
-      binlog_info.save(save_file)
-    end
-
     class BinlogInfo
-      attr_accessor :filename, :position
+      attr_accessor :filename, :position, :position_file
 
-      def initialize(filename = nil, position = nil)
+      def initialize(filename = nil, position = nil, position_file = nil)
         @filename = filename
         @position = position
+        @position_file = position_file
       end
 
       def valid?
         @filename && @position
       end
 
-      def save(position_file = nil)
-        if position_file
-          position_file.update(@filename, @position)
-        end
+      def save_with(filename, position)
+        @filename = filename if filename
+        @position = position if position
+        save
       end
 
-      def load!(position_file)
-        @filename, @position = position_file.read
+      def save(position_file = nil)
+        @position_file = position_file if position_file
+        @position_file.update(@filename, @position) if @position_file
+      end
+
+      def load!(position_file = nil)
+        @position_file = position_file if position_file
+        @filename, @position = @position_file.read
       end
 
       def should_process?(processed_binlog_info)
