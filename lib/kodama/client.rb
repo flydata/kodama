@@ -150,6 +150,8 @@ module Kodama
         when Binlog::QueryEvent
           @binlog_info.save_with(@binlog_info.filename, event.next_position)
         when Binlog::RotateEvent
+          # Call callback because app might need binlog info when resuming
+          callback :on_rotate_event, event
           @binlog_info.save_with(event.binlog_file, event.binlog_pos)
         end
         set_next_event_position(@binlog_info, event)
