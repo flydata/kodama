@@ -33,7 +33,12 @@ describe Kodama::Client do
 
       def stub_event(target_event)
         target_event_class = target_event.instance_variable_get('@name')
-        [Binlog::QueryEvent, Binlog::RowEvent, Binlog::RotateEvent, Binlog::Xid].each do |event|
+        [Binlog::QueryEvent,
+         Binlog::RowEvent,
+         Binlog::RotateEvent,
+         Binlog::Xid,
+         Binlog::TableMapEvent,
+        ].each do |event|
           if event == target_event_class
             event.stub(:===).and_return { true }
           else
@@ -81,6 +86,12 @@ describe Kodama::Client do
       end
     end
 
+    let(:table_map_event) do
+      mock(Binlog::TableMapEvent).tap do |event|
+        event.stub(:next_position).and_return { 250 }
+      end
+    end
+
     let(:row_event) do
       mock(Binlog::RowEvent).tap do |event|
         event.stub(:next_position).and_return { 300 }
@@ -114,12 +125,14 @@ describe Kodama::Client do
     end
 
     context "with multiple events" do
-      let(:events) { [rotate_event, query_event, row_event, xid_event] }
+      let(:events) { [rotate_event, query_event, table_map_event, row_event, xid_event] }
       it 'should save position only on row, query and rotate event' do
         position_file = TestPositionFile.new.tap do |pf|
           pf.should_receive(:update).with('binlog', 100).once.ordered
-          pf.should_receive(:update).with('binlog', 200).once.ordered
-          pf.should_receive(:update).with('binlog', 300).once.ordered
+          # 1st: after query event
+          # 2nd: at table map event
+          pf.should_receive(:update).with('binlog', 200).twice.ordered
+          pf.should_receive(:update).with('binlog', 300).never
         end
         stub_position_file(position_file)
         client.binlog_position_file = 'test'
