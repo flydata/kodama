@@ -327,7 +327,10 @@ module Kodama
       def initialize(filename)
         @file = open(filename, File::RDWR|File::CREAT)
         @file.sync = true
+        @filename = filename
       end
+
+      attr_reader :filename
 
       def update(filename, position)
         @file.pos = 0
