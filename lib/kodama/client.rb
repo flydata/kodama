@@ -60,6 +60,12 @@ module Kodama
       @sent_binlog_info.load!(@sent_position_file)
     end
 
+    def ssl_ca=(filename)
+      raise Errno::ENOENT, "ssl ca file (#{filename})" unless File.exists?(filename)
+      raise "ssl ca is empty (#{filename})" if IO.read(filename).empty?
+      @ssl_ca = filename
+    end
+
     def connection_retry_wait=(wait)
       @retry_info.wait = wait
     end
@@ -108,6 +114,11 @@ module Kodama
       @retry_info.count_reset
       begin
         client = binlog_client(@url)
+
+        if @ssl_ca && client.respond_to?(:set_ssl_ca)
+          client.set_ssl_ca(@ssl_ca)
+        end
+
         raise Binlog::Error, 'MySQL server has gone away' unless client.connect
 
         if @binlog_info.valid?
@@ -132,6 +143,7 @@ module Kodama
     end
 
     private
+
     def unsafe
       @safe_to_stop = false
       yield
