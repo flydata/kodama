@@ -1,4 +1,5 @@
 require 'spec_helper'
+require 'tempfile'
 
 describe Kodama::Client do
   describe '.mysql_url' do
@@ -10,6 +11,47 @@ describe Kodama::Client do
       mysql_url(:username => 'user', :host => 'example.com').should == 'mysql://user@example.com'
       mysql_url(:username => 'user', :host => 'example.com',
                 :password => 'password', :port => 3306).should == 'mysql://user:password@example.com:3306'
+    end
+  end
+
+
+  describe '#ssl_ca=' do
+    let(:client) { Kodama::Client.new('mysql://user@host') }
+    let(:ssl_ca_file) { Tempfile.new('ssl-ca') }
+
+    subject { client.ssl_ca = ssl_ca_file.path }
+
+    context 'when ssl ca file exists and not empty' do
+      before { ssl_ca_file.write('---- content -----') and ssl_ca_file.close }
+      it do
+        subject
+        expect(client.instance_variable_get("@ssl_ca")).to eq(ssl_ca_file.path)
+      end
+    end
+
+    context 'when ssl ca file exists but empty' do
+      it do
+        expect{subject}.to raise_error("ssl ca is empty (#{ssl_ca_file.path})")
+      end
+    end
+
+    context 'when ssl ca file does not exist' do
+      before do
+        @dummy_ssl_ca_file_path = ssl_ca_file.path + ".dummy"
+      end
+      it do
+        expect {
+          client.ssl_ca = @dummy_ssl_ca_file_path
+        }.to raise_error(Errno::ENOENT, /ssl ca file \(#{@dummy_ssl_ca_file_path}\)/)
+      end
+    end
+
+    context 'when ssl ca file is nil' do
+      it do
+        expect {
+          client.ssl_ca = nil
+        }.to raise_error(Errno::ENOENT, /ssl ca file \(\)/)
+      end
     end
   end
 
@@ -130,7 +172,7 @@ describe Kodama::Client do
     end
 
     context "with multiple events" do
-      #               100           100          200              250        300
+      #position       100           100          200              250        300
       let(:events) { [rotate_event, query_event, table_map_event, row_event, xid_event] }
 
       context 'when sent position file is not set' do

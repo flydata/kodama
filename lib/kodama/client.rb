@@ -61,7 +61,7 @@ module Kodama
     end
 
     def ssl_ca=(filename)
-      raise Errno::ENOENT, "ssl ca file (#{filename})" unless File.exists?(filename)
+      raise Errno::ENOENT, "ssl ca file (#{filename})" unless filename && File.exists?(filename)
       raise "ssl ca is empty (#{filename})" if IO.read(filename).empty?
       @ssl_ca = filename
     end
