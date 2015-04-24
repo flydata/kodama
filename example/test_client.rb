@@ -50,6 +50,7 @@ end
 
 worker = Worker.new
 
+SLEEP_TIME = 3
 puts "===== Kodama client start ====="
 Kodama::Client.start(conn_info) do |c|
   puts conn_info
@@ -62,14 +63,19 @@ Kodama::Client.start(conn_info) do |c|
 
   c.on_row_event do |event|
     worker.perform(event)
-    sleep 1
+    sleep SLEEP_TIME
   end
   c.on_query_event do |event|
     puts "query: #{event.query}"
-    sleep 1
+    sleep SLEEP_TIME
   end
   c.on_rotate_event do |event|
     puts "rotate:#{event.binlog_file} #{event.binlog_pos}"
-    sleep 1
+    sleep SLEEP_TIME
   end
+  c.on_table_map_event do |event|
+    puts "table_map: #{event.table_name}"
+    sleep SLEEP_TIME
+  end
+ 
 end
