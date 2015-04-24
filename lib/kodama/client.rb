@@ -208,7 +208,12 @@ module Kodama
           callback :on_table_map_event, event
         end
         # Save current event's position as checkpoint
-        @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+
+        # For the case when receiving multiple table map events in a row.
+        # In that case, the resume point needs to be the first table map event position.
+        unless @previous_event.kind_of?(Binlog::TableMapEvent)
+          @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        end
 
       when Binlog::RowEvent
         if processable
@@ -233,6 +238,7 @@ module Kodama
 
       # Set the next event position for the next iteration
       set_next_event_position(@binlog_info, event)
+      @previous_event = event
     end
 
     def callback(name, *args)
