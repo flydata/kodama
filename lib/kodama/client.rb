@@ -158,6 +158,8 @@ module Kodama
     end
 
     def process_event(event)
+      #puts "(kodama) (resume) cur_pos:#{@binlog_info.filename}/#{@binlog_info.position} next_pos:#{event.next_position} event:#{event}"
+
       # If the position in binlog file is behind the sent position,
       # keep updating only binlog info in most of cases
       processable = @binlog_info.should_process?(@sent_binlog_info)
@@ -279,6 +281,7 @@ module Kodama
 
       def save(position_file = nil)
         @position_file = position_file if position_file
+        #puts "  (pos-file-update) #{@position_file.filename} #{filename} #{position}"
         @position_file.update(@filename, @position) if @position_file
       end
 
