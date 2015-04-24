@@ -2,6 +2,7 @@
 
 require 'binlog'
 require 'logger'
+require 'uri'
 
 module Kodama
   class Client
@@ -21,9 +22,11 @@ module Kodama
       end
 
       def mysql_url(options = {})
-        password = options[:password] ? ":#{options[:password]}" : nil
+        username = URI.escape(options[:username], /[@:\/\?&#]/)
+        password = options[:password] ? ":#{URI.escape(options[:password], /[@:\/\?&#]/)}" : nil
         port = options[:port] ? ":#{options[:port]}" : nil
-        "mysql://#{options[:username]}#{password}@#{options[:host]}#{port}"
+        host = URI.escape(options[:host], /[@:\/\?&#]/)
+        "mysql://#{username}#{password}@#{host}#{port}"
       end
     end
 
