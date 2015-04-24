@@ -158,6 +158,8 @@ module Kodama
     end
 
     def process_event(event)
+      #puts "(kodama) (resume) cur_pos:#{@binlog_info.filename}/#{@binlog_info.position} next_pos:#{event.next_position} event:#{event}"
+
       # If the position in binlog file is behind the sent position,
       # keep updating only binlog info in most of cases
       processable = @binlog_info.should_process?(@sent_binlog_info)
@@ -208,7 +210,12 @@ module Kodama
           callback :on_table_map_event, event
         end
         # Save current event's position as checkpoint
-        @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+
+        # For the case when receiving multiple table map events in a row.
+        # In that case, the resume point needs to be the first table map event position.
+        unless @previous_event.kind_of?(Binlog::TableMapEvent)
+          @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
+        end
 
       when Binlog::RowEvent
         if processable
@@ -233,6 +240,7 @@ module Kodama
 
       # Set the next event position for the next iteration
       set_next_event_position(@binlog_info, event)
+      @previous_event = event
     end
 
     def callback(name, *args)
@@ -273,6 +281,7 @@ module Kodama
 
       def save(position_file = nil)
         @position_file = position_file if position_file
+        #puts "  (pos-file-update) #{@position_file.filename} #{filename} #{position}"
         @position_file.update(@filename, @position) if @position_file
       end
 
