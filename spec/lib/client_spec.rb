@@ -2,6 +2,8 @@ require 'spec_helper'
 require 'tempfile'
 
 describe Kodama::Client do
+  let(:client) { Kodama::Client.new('mysql://user@host') }
+
   describe '.mysql_url' do
     def mysql_url(options)
       Kodama::Client.mysql_url(options)
@@ -16,7 +18,6 @@ describe Kodama::Client do
 
 
   describe '#ssl_ca=' do
-    let(:client) { Kodama::Client.new('mysql://user@host') }
     let(:ssl_ca_file) { Tempfile.new('ssl-ca') }
 
     subject { client.ssl_ca = ssl_ca_file.path }
@@ -434,5 +435,53 @@ describe Kodama::Client do
         client.start
       end
     end
+  end
+
+  describe '#next_position_overflowed?' do
+
+    let(:rotate_event) do
+      double(Binlog::RotateEvent).tap do |event|
+        event.stub(:next_position).and_return(0)
+        event.stub(:binlog_file).and_return('binlog')
+        event.stub(:binlog_pos).and_return(100)
+      end
+    end
+
+    let(:overflowed_query_event) do
+      double(Binlog::QueryEvent).tap do |event|
+        event.stub(:next_position).and_return(2)
+      end
+    end
+
+    let(:event) { nil }
+    subject { client.send(:next_position_overflowed?, 4, event) }
+
+    context 'when current position is not overflowed' do
+      context 'when event is artifical event (next_position = 0)' do
+        let(:event) { rotate_event }
+        it { is_expected.to be_falsey }
+      end
+
+      context 'when event is actual event with overflowed next position' do
+        let(:event) { overflowed_query_event }
+        it { is_expected.to be_truthy }
+      end
+    end
+
+    context 'when current position is overflowed' do
+      before {
+        client.instance_variable_set(:@current_position_overflowed, true)
+      }
+      context 'when event is artifical event (next_position = 0)' do
+        let(:event) { rotate_event }
+        it { is_expected.to be_truthy }
+      end
+
+      context 'when event is actual event with overflowed next position' do
+        let(:event) { overflowed_query_event }
+        it { is_expected.to be_truthy }
+      end
+    end
+
   end
 end
