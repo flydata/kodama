@@ -8,9 +8,9 @@ describe Kodama::Client do
     end
 
     it do
-      mysql_url(:username => 'user', :host => 'example.com').should == 'mysql://user@example.com'
-      mysql_url(:username => 'user', :host => 'example.com',
-                :password => 'password', :port => 3306).should == 'mysql://user:password@example.com:3306'
+      expect(mysql_url(:username => 'user', :host => 'example.com')).to eq 'mysql://user@example.com'
+      expect(mysql_url(:username => 'user', :host => 'example.com',
+                       :password => 'password', :port => 3306)).to eq 'mysql://user:password@example.com:3306'
     end
   end
 
@@ -82,7 +82,7 @@ describe Kodama::Client do
          Binlog::TableMapEvent,
         ].each do |event|
           if event == target_event_class
-            event.stub(:===).and_return { true }
+            event.stub(:===).and_return(true)
           else
             # :=== is stubbed
             if event.method(:===).owner != Module
@@ -105,49 +105,49 @@ describe Kodama::Client do
     let(:binlog_client) { TestBinlogClient.new(events, connect) }
 
     def stub_position_file(position_file = nil, file_name = nil)
-      client.stub(:position_file).and_return { position_file || TestPositionFile.new }
+      client.stub(:position_file) { position_file || TestPositionFile.new }
     end
 
     # @param {"file_name" => <PositionFile>, ....}
     def stub_position_files(fn_posf_hash)
-      client.stub(:position_file).and_return { |fn| fn_posf_hash[fn] || TestPositionFile.new }
+      client.stub(:position_file) { |fn| fn_posf_hash[fn] || TestPositionFile.new }
     end
 
     let(:client) {
       c = Kodama::Client.new('mysql://user@host')
-      c.stub(:binlog_client).and_return { binlog_client }
+      c.stub(:binlog_client).and_return(binlog_client)
       c
     }
 
     let(:rotate_event) do
-      mock(Binlog::RotateEvent).tap do |event|
-        event.stub(:next_position).and_return { 0 }
-        event.stub(:binlog_file).and_return { 'binlog' }
-        event.stub(:binlog_pos).and_return { 100 }
+      double(Binlog::RotateEvent).tap do |event|
+        event.stub(:next_position).and_return(0)
+        event.stub(:binlog_file).and_return('binlog')
+        event.stub(:binlog_pos).and_return(100)
       end
     end
 
     let(:query_event) do
-      mock(Binlog::QueryEvent).tap do |event|
-        event.stub(:next_position).and_return { 200 }
+      double(Binlog::QueryEvent).tap do |event|
+        event.stub(:next_position).and_return(200)
       end
     end
 
     let(:table_map_event) do
-      mock(Binlog::TableMapEvent).tap do |event|
-        event.stub(:next_position).and_return { 250 }
+      double(Binlog::TableMapEvent).tap do |event|
+        event.stub(:next_position).and_return(250)
       end
     end
 
     let(:row_event) do
-      mock(Binlog::RowEvent).tap do |event|
-        event.stub(:next_position).and_return { 300 }
+      double(Binlog::RowEvent).tap do |event|
+        event.stub(:next_position).and_return(300)
       end
     end
 
     let(:xid_event) do
-      mock(Binlog::Xid).tap do |event|
-        event.stub(:next_position).and_return { 400 }
+      double(Binlog::Xid).tap do |event|
+        event.stub(:next_position).and_return(400)
       end
     end
 
@@ -258,59 +258,59 @@ describe Kodama::Client do
 
         # 400
         let(:overflowed_table_map_event) do
-          mock(Binlog::TableMapEvent).tap do |event|
-            event.stub(:next_position).and_return { 20 }
-            event.stub(:event_length).and_return { uint_max + 20 - 400 }
+          double(Binlog::TableMapEvent).tap do |event|
+            event.stub(:next_position).and_return(20)
+            event.stub(:event_length).and_return(uint_max + 20 - 400)
           end
         end
 
         # uint_max + 20
         let(:overflowed_row_event) do
-          mock(Binlog::RowEvent).tap do |event|
-            event.stub(:next_position).and_return { 150 }
-            event.stub(:event_length).and_return { 150 - 20 }
+          double(Binlog::RowEvent).tap do |event|
+            event.stub(:next_position).and_return(150)
+            event.stub(:event_length).and_return(150 - 20)
           end
         end
 
         # uint_max + 150
         let(:overflowed_table_map_event_2) do
-          mock(Binlog::TableMapEvent).tap do |event|
-            event.stub(:next_position).and_return { 210 }
-            event.stub(:event_length).and_return { 210 - 150 }
+          double(Binlog::TableMapEvent).tap do |event|
+            event.stub(:next_position).and_return(210)
+            event.stub(:event_length).and_return(210 - 150)
           end
         end
 
         # uint_max + 210
         let(:overflowed_row_event_2) do
-          mock(Binlog::RowEvent).tap do |event|
-            event.stub(:next_position).and_return { 300 }
-            event.stub(:event_length).and_return { 300 - 210 }
+          double(Binlog::RowEvent).tap do |event|
+            event.stub(:next_position).and_return(300)
+            event.stub(:event_length).and_return(300 - 210)
           end
         end
 
         let(:rotate_event_2) do
-          mock(Binlog::RotateEvent).tap do |event|
-            event.stub(:next_position).and_return { 0 }
-            event.stub(:binlog_file).and_return { 'binlog2' }
-            event.stub(:binlog_pos).and_return { 4 }
+          double(Binlog::RotateEvent).tap do |event|
+            event.stub(:next_position).and_return(0)
+            event.stub(:binlog_file).and_return('binlog2')
+            event.stub(:binlog_pos).and_return(4)
           end
         end
 
         let(:query_event_2) do
-          mock(Binlog::QueryEvent).tap do |event|
-            event.stub(:next_position).and_return { 120 }
+          double(Binlog::QueryEvent).tap do |event|
+            event.stub(:next_position).and_return(120)
           end
         end
 
         let(:table_map_event_2) do
-          mock(Binlog::TableMapEvent).tap do |event|
-            event.stub(:next_position).and_return { 180 }
+          double(Binlog::TableMapEvent).tap do |event|
+            event.stub(:next_position).and_return(180)
           end
         end
 
         let(:row_event_2) do
-          mock(Binlog::RowEvent).tap do |event|
-            event.stub(:next_position).and_return { 220 }
+          double(Binlog::RowEvent).tap do |event|
+            event.stub(:next_position).and_return(220)
           end
         end
 
