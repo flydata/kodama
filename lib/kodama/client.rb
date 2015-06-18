@@ -185,8 +185,10 @@ module Kodama
         # because app might need binlog info when resuming.
         callback :on_rotate_event, event
         # Update binlog_info with rotation
-        @binlog_info.save_with(event.binlog_file, event.binlog_pos)
-        @current_position_overflowed = false
+        if cur_binlog_file != event.binlog_file   # only when binlog file is changed
+          @binlog_info.save_with(event.binlog_file, event.binlog_pos)
+          @current_position_overflowed = false
+        end
 
       when Binlog::IntVarEvent
         if processable

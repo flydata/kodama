@@ -368,6 +368,37 @@ describe Kodama::Client do
       end
     end
 
+    context "when receiving 2 rotate events with same binlog file" do
+      let(:rotate_event_2) do
+        double(Binlog::RotateEvent).tap do |event|
+          event.stub(:next_position).and_return(0)
+          event.stub(:binlog_file).and_return('binlog')
+          event.stub(:binlog_pos).and_return(300)
+        end
+      end
+
+      #position       100           100          200              250
+      let(:events) { [rotate_event, query_event, table_map_event, row_event,
+      #               300             300
+                      rotate_event_2, xid_event] }
+
+      it 'should not save position with second rotate event' do
+        position_file = TestPositionFile.new.tap do |pf|
+          # On rotate event
+          pf.should_receive(:update).with('binlog', 100).once.ordered
+          # 1st: After query event
+          # 2nd: On table map event
+          pf.should_receive(:update).with('binlog', 200).twice.ordered
+          # On rotate_event_2
+          pf.should_receive(:update).with('binlog', 300).never
+        end
+
+        stub_position_files('test_resume' => position_file)
+        client.binlog_position_file = 'test_resume'
+        client.start
+      end
+    end
+
     context "when connection failed" do
       let(:events) { [query_event] }
       let(:connect) { false }
