@@ -166,7 +166,7 @@ module Kodama
 
       # Keep current binlog position temporary
       cur_binlog_file = @binlog_info.filename
-      cur_binlog_pos = @binlog_info.position
+      cur_binlog_pos = (@binlog_info.position || 4)  # 4 is the binlog head position
 
       case event
       when Binlog::QueryEvent
@@ -176,14 +176,19 @@ module Kodama
           @sent_binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
         end
         # Save next event's position as checkpoint (@binlog_info)
-        @binlog_info.save_with(cur_binlog_file, event.next_position)
+        unless next_position_overflowed?(cur_binlog_pos, event)
+          @binlog_info.save_with(cur_binlog_file, calc_next_position(cur_binlog_pos, event))
+        end
 
       when Binlog::RotateEvent
         # Even if the event is already sent, call callback
         # because app might need binlog info when resuming.
         callback :on_rotate_event, event
         # Update binlog_info with rotation
-        @binlog_info.save_with(event.binlog_file, event.binlog_pos)
+        if cur_binlog_file != event.binlog_file   # only when binlog file is changed
+          @binlog_info.save_with(event.binlog_file, event.binlog_pos)
+          @current_position_overflowed = false
+        end
 
       when Binlog::IntVarEvent
         if processable
@@ -213,7 +218,8 @@ module Kodama
 
         # For the case when receiving multiple table map events in a row.
         # In that case, the resume point needs to be the first table map event position.
-        unless @previous_event.kind_of?(Binlog::TableMapEvent)
+        # Also when current position is overflowed, skip saving binlog for resume.
+        if !@previous_event.kind_of?(Binlog::TableMapEvent) && !@current_position_overflowed
           @binlog_info.save_with(cur_binlog_file, cur_binlog_pos)
         end
 
@@ -239,7 +245,25 @@ module Kodama
       end
 
       # Set the next event position for the next iteration
-      set_next_event_position(@binlog_info, event)
+      set_next_event_position(@binlog_info, cur_binlog_pos, event)
+
+      # Set true to current_position_overflowed flag if the next position is smaller than the current position
+      # If current_position_overflowed is true:
+      #   - binlog pos file for resume will not be updated
+      #   - calculate the next position with event.event_length, not using event.next_event
+      #
+      # binlog format has integer overflow issue for event.next_position and set position api
+      # when the position exceeds 4294967295(4GB).
+      # It can happen when running a large transaction according to mysql docs.
+      # https://dev.mysql.com/doc/refman/5.1/en/replication-options-binary-log.html#sysvar_max_binlog_size
+      #
+      # The issue is that the position larger than 4294967295 cannot be set for resume point
+      # because set_position api doesn't support a larger position. Also the events after 4294967295
+      # were not processed because of small position.
+      if next_position_overflowed?(cur_binlog_pos, event)
+        @current_position_overflowed = true
+      end
+
       @previous_event = event
     end
 
@@ -254,10 +278,29 @@ module Kodama
     # Set the next event position for the next iteration
     # Compare positions to avoid decreasing the position unintentionally
     # because next_position of Binlog::FormatEvent is always 0
-    def set_next_event_position(binlog_info, event)
-      if !event.kind_of?(Binlog::RotateEvent) && binlog_info.position.to_i < event.next_position.to_i
-        binlog_info.position = event.next_position
+    def set_next_event_position(binlog_info, cur_binlog_pos, event)
+      next_position = calc_next_position(cur_binlog_pos, event)
+      if !event.kind_of?(Binlog::RotateEvent) && binlog_info.position.to_i < next_position
+        binlog_info.position = next_position
       end
+    end
+
+    def calc_next_position(cur_binlog_pos, event)
+      # Calculate next position from current position and event length if position is overflowed
+      if next_position_overflowed?(cur_binlog_pos, event)
+        # return 0 when next_position is 0
+        if event.next_position.to_i == 0
+          0
+        else
+          cur_binlog_pos + event.event_length
+        end
+      else
+        event.next_position
+      end
+    end
+
+    def next_position_overflowed?(cur_binlog_pos, event)
+      (event.next_position != 0 && event.next_position < cur_binlog_pos.to_i) || @current_position_overflowed
     end
 
     class BinlogInfo

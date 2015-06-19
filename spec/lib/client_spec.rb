@@ -2,21 +2,22 @@ require 'spec_helper'
 require 'tempfile'
 
 describe Kodama::Client do
+  let(:client) { Kodama::Client.new('mysql://user@host') }
+
   describe '.mysql_url' do
     def mysql_url(options)
       Kodama::Client.mysql_url(options)
     end
 
     it do
-      mysql_url(:username => 'user', :host => 'example.com').should == 'mysql://user@example.com'
-      mysql_url(:username => 'user', :host => 'example.com',
-                :password => 'password', :port => 3306).should == 'mysql://user:password@example.com:3306'
+      expect(mysql_url(:username => 'user', :host => 'example.com')).to eq 'mysql://user@example.com'
+      expect(mysql_url(:username => 'user', :host => 'example.com',
+                       :password => 'password', :port => 3306)).to eq 'mysql://user:password@example.com:3306'
     end
   end
 
 
   describe '#ssl_ca=' do
-    let(:client) { Kodama::Client.new('mysql://user@host') }
     let(:ssl_ca_file) { Tempfile.new('ssl-ca') }
 
     subject { client.ssl_ca = ssl_ca_file.path }
@@ -82,7 +83,7 @@ describe Kodama::Client do
          Binlog::TableMapEvent,
         ].each do |event|
           if event == target_event_class
-            event.stub(:===).and_return { true }
+            event.stub(:===).and_return(true)
           else
             # :=== is stubbed
             if event.method(:===).owner != Module
@@ -105,49 +106,49 @@ describe Kodama::Client do
     let(:binlog_client) { TestBinlogClient.new(events, connect) }
 
     def stub_position_file(position_file = nil, file_name = nil)
-      client.stub(:position_file).and_return { position_file || TestPositionFile.new }
+      client.stub(:position_file) { position_file || TestPositionFile.new }
     end
 
     # @param {"file_name" => <PositionFile>, ....}
     def stub_position_files(fn_posf_hash)
-      client.stub(:position_file).and_return { |fn| fn_posf_hash[fn] || TestPositionFile.new }
+      client.stub(:position_file) { |fn| fn_posf_hash[fn] || TestPositionFile.new }
     end
 
     let(:client) {
       c = Kodama::Client.new('mysql://user@host')
-      c.stub(:binlog_client).and_return { binlog_client }
+      c.stub(:binlog_client).and_return(binlog_client)
       c
     }
 
     let(:rotate_event) do
-      mock(Binlog::RotateEvent).tap do |event|
-        event.stub(:next_position).and_return { 0 }
-        event.stub(:binlog_file).and_return { 'binlog' }
-        event.stub(:binlog_pos).and_return { 100 }
+      double(Binlog::RotateEvent).tap do |event|
+        event.stub(:next_position).and_return(0)
+        event.stub(:binlog_file).and_return('binlog')
+        event.stub(:binlog_pos).and_return(100)
       end
     end
 
     let(:query_event) do
-      mock(Binlog::QueryEvent).tap do |event|
-        event.stub(:next_position).and_return { 200 }
+      double(Binlog::QueryEvent).tap do |event|
+        event.stub(:next_position).and_return(200)
       end
     end
 
     let(:table_map_event) do
-      mock(Binlog::TableMapEvent).tap do |event|
-        event.stub(:next_position).and_return { 250 }
+      double(Binlog::TableMapEvent).tap do |event|
+        event.stub(:next_position).and_return(250)
       end
     end
 
     let(:row_event) do
-      mock(Binlog::RowEvent).tap do |event|
-        event.stub(:next_position).and_return { 300 }
+      double(Binlog::RowEvent).tap do |event|
+        event.stub(:next_position).and_return(300)
       end
     end
 
     let(:xid_event) do
-      mock(Binlog::Xid).tap do |event|
-        event.stub(:next_position).and_return { 400 }
+      double(Binlog::Xid).tap do |event|
+        event.stub(:next_position).and_return(400)
       end
     end
 
@@ -251,6 +252,152 @@ describe Kodama::Client do
           end
         end
       end
+
+
+      context 'when position is overflowed' do
+        let(:uint_max) { 2 ** 32 - 1 }
+
+        # 400
+        let(:overflowed_table_map_event) do
+          double(Binlog::TableMapEvent).tap do |event|
+            event.stub(:next_position).and_return(20)
+            event.stub(:event_length).and_return(uint_max + 20 - 400)
+          end
+        end
+
+        # uint_max + 20
+        let(:overflowed_row_event) do
+          double(Binlog::RowEvent).tap do |event|
+            event.stub(:next_position).and_return(150)
+            event.stub(:event_length).and_return(150 - 20)
+          end
+        end
+
+        # uint_max + 150
+        let(:overflowed_table_map_event_2) do
+          double(Binlog::TableMapEvent).tap do |event|
+            event.stub(:next_position).and_return(210)
+            event.stub(:event_length).and_return(210 - 150)
+          end
+        end
+
+        # uint_max + 210
+        let(:overflowed_row_event_2) do
+          double(Binlog::RowEvent).tap do |event|
+            event.stub(:next_position).and_return(300)
+            event.stub(:event_length).and_return(300 - 210)
+          end
+        end
+
+        let(:rotate_event_2) do
+          double(Binlog::RotateEvent).tap do |event|
+            event.stub(:next_position).and_return(0)
+            event.stub(:binlog_file).and_return('binlog2')
+            event.stub(:binlog_pos).and_return(4)
+          end
+        end
+
+        let(:query_event_2) do
+          double(Binlog::QueryEvent).tap do |event|
+            event.stub(:next_position).and_return(120)
+          end
+        end
+
+        let(:table_map_event_2) do
+          double(Binlog::TableMapEvent).tap do |event|
+            event.stub(:next_position).and_return(180)
+          end
+        end
+
+        let(:row_event_2) do
+          double(Binlog::RowEvent).tap do |event|
+            event.stub(:next_position).and_return(220)
+          end
+        end
+
+        #position       100           100          200              250        300
+        let(:events) { [rotate_event, query_event, table_map_event, row_event, xid_event,
+        #               400                         uint_max + 20(overflowed)
+                        overflowed_table_map_event, overflowed_row_event,
+        #               uint_max + 150(overflowed)    uint_max + 210(overflowed)
+                        overflowed_table_map_event_2, overflowed_row_event_2,
+        #               4               4              120
+                        rotate_event_2, query_event_2, table_map_event_2,
+        #               180
+                        row_event_2,
+        ] }
+
+        it 'should save position for resume on only underflow events' do
+          position_file = TestPositionFile.new.tap do |pf|
+            # On rotate event
+            pf.should_receive(:update).with('binlog', 100).once.ordered
+            # 1st: After query event
+            # 2nd: On table map event
+            pf.should_receive(:update).with('binlog', 200).twice.ordered
+            # On overflowed_table_map_event
+            pf.should_receive(:update).with('binlog', 400).once.ordered
+            # On overflowed_table_map_event_2
+            pf.should_receive(:update).with('binlog', 150).never
+            pf.should_receive(:update).with('binlog', uint_max + 150).never
+            # On rotate_event_2
+            pf.should_receive(:update).with('binlog2', 4).once
+            # On query_event_2
+            # On table_map_event_2
+            pf.should_receive(:update).with('binlog2', 120).twice
+          end
+
+          sent_position_file = TestPositionFile.new.tap do |pf|
+            # At query event -> shold be skipped
+            pf.should_receive(:update).with('binlog', 100).once
+            pf.should_receive(:update).with('binlog', 200).never
+            # At row event
+            pf.should_receive(:update).with('binlog', 250).once
+            pf.should_receive(:update).with('binlog', uint_max + 20).once
+            pf.should_receive(:update).with('binlog', uint_max + 210).once
+            pf.should_receive(:update).with('binlog2', 4).once
+            pf.should_receive(:update).with('binlog2', 180).once
+          end
+
+          stub_position_files('test_resume' => position_file,
+                              'test_sent' => sent_position_file)
+
+          client.binlog_position_file = 'test_resume'
+          client.sent_binlog_position_file = 'test_sent'
+          client.start
+        end
+
+      end
+    end
+
+    context "when receiving 2 rotate events with same binlog file" do
+      let(:rotate_event_2) do
+        double(Binlog::RotateEvent).tap do |event|
+          event.stub(:next_position).and_return(0)
+          event.stub(:binlog_file).and_return('binlog')
+          event.stub(:binlog_pos).and_return(300)
+        end
+      end
+
+      #position       100           100          200              250
+      let(:events) { [rotate_event, query_event, table_map_event, row_event,
+      #               300             300
+                      rotate_event_2, xid_event] }
+
+      it 'should not save position with second rotate event' do
+        position_file = TestPositionFile.new.tap do |pf|
+          # On rotate event
+          pf.should_receive(:update).with('binlog', 100).once.ordered
+          # 1st: After query event
+          # 2nd: On table map event
+          pf.should_receive(:update).with('binlog', 200).twice.ordered
+          # On rotate_event_2
+          pf.should_receive(:update).with('binlog', 300).never
+        end
+
+        stub_position_files('test_resume' => position_file)
+        client.binlog_position_file = 'test_resume'
+        client.start
+      end
     end
 
     context "when connection failed" do
@@ -288,5 +435,53 @@ describe Kodama::Client do
         client.start
       end
     end
+  end
+
+  describe '#next_position_overflowed?' do
+
+    let(:rotate_event) do
+      double(Binlog::RotateEvent).tap do |event|
+        event.stub(:next_position).and_return(0)
+        event.stub(:binlog_file).and_return('binlog')
+        event.stub(:binlog_pos).and_return(100)
+      end
+    end
+
+    let(:overflowed_query_event) do
+      double(Binlog::QueryEvent).tap do |event|
+        event.stub(:next_position).and_return(2)
+      end
+    end
+
+    let(:event) { nil }
+    subject { client.send(:next_position_overflowed?, 4, event) }
+
+    context 'when current position is not overflowed' do
+      context 'when event is artifical event (next_position = 0)' do
+        let(:event) { rotate_event }
+        it { is_expected.to be_falsey }
+      end
+
+      context 'when event is actual event with overflowed next position' do
+        let(:event) { overflowed_query_event }
+        it { is_expected.to be_truthy }
+      end
+    end
+
+    context 'when current position is overflowed' do
+      before {
+        client.instance_variable_set(:@current_position_overflowed, true)
+      }
+      context 'when event is artifical event (next_position = 0)' do
+        let(:event) { rotate_event }
+        it { is_expected.to be_truthy }
+      end
+
+      context 'when event is actual event with overflowed next position' do
+        let(:event) { overflowed_query_event }
+        it { is_expected.to be_truthy }
+      end
+    end
+
   end
 end
