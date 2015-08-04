@@ -69,6 +69,11 @@ module Kodama
       @ssl_ca = filename
     end
 
+    def ssl_cipher=(ssl_cipher)
+      ssl_cipher = nil if ssl_cipher == ''
+      @ssl_cipher = ssl_cipher
+    end
+
     def connection_retry_wait=(wait)
       @retry_info.wait = wait
     end
@@ -120,6 +125,10 @@ module Kodama
 
         if @ssl_ca && client.respond_to?(:set_ssl_ca)
           client.set_ssl_ca(@ssl_ca)
+
+          if @ssl_cipher && client.respond_to?(:set_ssl_cipher)
+            client.set_ssl_cipher(@ssl_cipher)
+          end
         end
 
         raise Binlog::Error, 'MySQL server has gone away' unless client.connect
