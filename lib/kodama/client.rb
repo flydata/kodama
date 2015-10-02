@@ -5,6 +5,17 @@ require 'logger'
 require 'uri'
 
 module Kodama
+  # A wrapper exception raised when an exception is raised from within the
+  # transaction block.  When this exception is raised, the next execution of the
+  # client may not start from the correct binlog position.
+  class TransactionError < RuntimeError
+    def initialize(cause, msg = nil)
+      super(msg)
+      @cause = cause
+    end
+    attr_reader :cause
+  end
+
   class Client
     LOG_LEVEL = {
       :fatal => Logger::FATAL,
@@ -160,6 +171,8 @@ module Kodama
       @safe_to_stop = false
       yield
       @safe_to_stop = true
+    rescue Exception => e
+      raise TransactionError.new(e)
     end
 
     def stop_requested?
