@@ -125,8 +125,14 @@ module Kodama
 
     def start
       @retry_info.count_reset
+      client = nil
       begin
-        client = binlog_client(@url)
+        url = @url
+        if @binlog_info.valid?
+          url += "&binlog_file=#{@binlog_info.filename}&binlog_offset=#{@binlog_info.position}"
+        end
+
+        client = binlog_client(url)
 
         if @ssl_ca && client.respond_to?(:set_ssl_ca)
           client.set_ssl_ca(@ssl_ca)
@@ -137,10 +143,6 @@ module Kodama
         end
 
         raise Binlog::Error, 'MySQL server has gone away' unless client.connect
-
-        if @binlog_info.valid?
-          client.set_position(@binlog_info.filename, @binlog_info.position)
-        end
 
         while event = client.wait_for_next_event
           unsafe do
@@ -156,6 +158,8 @@ module Kodama
           retry
         end
         raise e
+      ensure
+        client.disconnect if client
       end
     end
 
