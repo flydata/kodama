@@ -129,7 +129,7 @@ module Kodama
       begin
         url = @url
         if @binlog_info.valid?
-          url += "&binlog_file=#{@binlog_info.filename}&binlog_offset=#{@binlog_info.position}"
+          url += "?binlog_file=#{@binlog_info.filename}&binlog_offset=#{@binlog_info.position}"
         end
 
         client = binlog_client(url)
