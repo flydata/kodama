@@ -125,6 +125,7 @@ module Kodama
     end
 
     def stop_request
+      @client.disconnect if @client
       @stop_requested = true
     end
 
@@ -155,6 +156,7 @@ module Kodama
       end
 
       begin
+        @client = client
         while event = client.wait_for_next_event
           unsafe do
             process_event(event)
@@ -171,6 +173,7 @@ module Kodama
         raise e
       ensure
         client.disconnect if client
+        @client = nil
       end
     end
 
