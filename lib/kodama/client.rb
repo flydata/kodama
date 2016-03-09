@@ -10,6 +10,11 @@ module Kodama
   # not start from the correct binlog position.
   module TransactionError; end
 
+  # A modifier error added to an exception raised during the establishing
+  # connection phase.  The user should not use the kodama client object
+  # after this error.
+  module ConnectionEstablishError; end
+
   class Client
     LOG_LEVEL = {
       :fatal => Logger::FATAL,
@@ -120,16 +125,18 @@ module Kodama
     end
 
     def stop_request
+      @client.disconnect if @client
       @stop_requested = true
     end
 
     def start
       @retry_info.count_reset
       client = nil
+
       begin
         url = @url
         if @binlog_info.valid?
-          url += "&binlog_file=#{@binlog_info.filename}&binlog_offset=#{@binlog_info.position}"
+          url += "?binlog_file=#{@binlog_info.filename}&binlog_offset=#{@binlog_info.position}"
         end
 
         client = binlog_client(url)
@@ -143,7 +150,13 @@ module Kodama
         end
 
         raise Binlog::Error, 'MySQL server has gone away' unless client.connect
+      rescue => e
+        e.extend ConnectionEstablishError
+        raise
+      end
 
+      begin
+        @client = client
         while event = client.wait_for_next_event
           unsafe do
             process_event(event)
@@ -160,6 +173,7 @@ module Kodama
         raise e
       ensure
         client.disconnect if client
+        @client = nil
       end
     end
 
